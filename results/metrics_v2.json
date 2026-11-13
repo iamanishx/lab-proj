@@ -1,5 +1,5 @@
 {
-  "csv": "scam_encounters_merged.csv",
+  "csv": "data/scam_encounters_india.csv",
   "rows": 3005,
   "train_rows": 2404,
   "test_rows": 601,
