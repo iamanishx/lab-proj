@@ -1,19 +1,17 @@
-# Real-Time Fraud Detection in Mobile-Money Transactions
+# Scam outcome prediction: ML mini-project
 
-ML mini-project: detect fraudulent mobile-money transactions, and score them fast
-enough to work on a live transaction stream.
+## Current project: collected data (v2)
 
-- **`fraud_detection.ipynb`** - the whole project as one executed notebook:
-  data, features, logistic regression baseline, small MLP, real metrics, plots,
-  and the simulated live-stream demo. Open it and read top to bottom; every
-  output cell is from a real run.
-- **`explanation.md`** - plain-English walkthrough of the whole thing, written
-  for someone new to ML. Start here if you're new.
-- **`results/metrics.json`** - the exact numbers from the training run.
-- **Trained model weights** - attached to the
-  [GitHub release](../../releases) (`lr_model.joblib`, `mlp_model.joblib`,
-  `scaler.joblib`, `features.joblib`).
+Predict a risky-engagement proxy from five categorical fields in 3,005 collected/coded scam-report rows (3,000 public-report rows plus 5 survey responses). `engaged` creates the target; it is not a predictor. A positive label combines clicking, OTP sharing and money loss, so it is not proof every scam succeeded.
 
-Dataset: [PaySim - Synthetic Financial Datasets For Fraud Detection](https://www.kaggle.com/datasets/ealaxi/paysim1)
-(6,362,620 mobile-money transactions, 8,213 fraud). The notebook downloads it
-from a public mirror on first run.
+- **`explanation.md`**: start here for the dataset, architecture, results, laptop setup and limitations.
+- **`fraud_detection_v2.ipynb`**: executed training/evaluation notebook; reads the included `data/scam_encounters_india.csv`.
+- **`data/DATASET_NOTES.md`**: provenance and coding conventions. Any approximate noise percentages in these notes are not measured audit results.
+- **`results/metrics_v2.json`**: LR F1 **0.7632**, ROC-AUC **0.8372**; MLP F1 **0.7782**, ROC-AUC **0.8482**, on 601 held-out rows.
+- **v2.0 model files**: <https://github.com/iamanishx/lab-proj/releases/tag/v2.0> (`lr_model.joblib`, `mlp_model.joblib`, `encoder.joblib`, `features.joblib`).
+
+The notebook uses an 80/20 stratified row split, not a source-grouped split. Related reports may cross train/test. These scores are not a validated estimate of real-world fraud-filter performance.
+
+## Earlier reference: PaySim (v1)
+
+`fraud_detection.ipynb`, `results/metrics.json` and `explanation_v1_paysim.md` preserve the earlier synthetic-transaction experiment. It predicts a different target from different features and must not be treated as a controlled comparison with v2. Its first-run dataset download is separate from the offline-capable v2 workflow.
