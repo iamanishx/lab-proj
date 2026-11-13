@@ -1,6 +1,6 @@
 # Explanation: the collected-data scam-outcome project (v2)
 
-This is the guide to `fraud_detection_v2.ipynb`, updated after the 13 November 2026 run. The old `fraud_detection.ipynb` uses PaySim and remains a separate synthetic-transaction experiment. Its earlier walkthrough is preserved in `explanation_v1_paysim.md`.
+This is the guide to `fraud_detection_v2.ipynb` and its standalone equivalent `train.py`, updated after the 13 November 2026 run. The old `fraud_detection.ipynb` uses PaySim and remains a separate synthetic-transaction experiment. Its earlier walkthrough is preserved in `explanation_v1_paysim.md`.
 
 ## 1. What are we trying to predict?
 
@@ -70,7 +70,55 @@ The split is by **row**, not source URL. Related reports from one thread can cro
 
 ### One-hot encoding
 
-Models need numbers. `OneHotEncoder` turns each category into a separate 0/1 column, such as `channel_whatsapp`. The fitted encoder creates 21 columns in this run. It is fitted on training data only and then applied to the test data, so test categories do not determine its learned vocabulary. `handle_unknown="ignore"` prevents an unseen category from causing an error, but does not mean the model understands that category.
+Models need numbers, not category words. One-hot encoding gives each category its own 0/1 slot: 1 means selected, 0 means not selected. **Five fields do not mean five input numbers.** A field with four possible categories becomes four numbers.
+
+The actual saved v2.0 encoder uses this field and category order:
+
+| Field | Categories, in encoder order | Number of slots |
+|---|---|---:|
+| `channel` | `call`, `email`, `sms`, `whatsapp` | 4 |
+| `claimed_sender` | `bank_kyc`, `family_emergency`, `job`, `other`, `prize`, `refund` | 6 |
+| `asked_for` | `link`, `money`, `nothing`, `otp`, `pin`, `qr_scan` | 6 |
+| `urgency_pressure` | `no`, `yes` | 2 |
+| `person_daily_upi_use` | `1-3 times`, `4+ times`, `unknown` | 3 |
+| **Total input numbers per row** | **4 + 6 + 6 + 2 + 3** | **21** |
+
+For example, one scam-attempt row is:
+
+```text
+channel = call
+claimed_sender = bank_kyc
+asked_for = otp
+urgency_pressure = yes
+person_daily_upi_use = unknown
+```
+
+The encoder converts that row into these groups:
+
+```text
+call     -> [1, 0, 0, 0]        # call, email, sms, whatsapp
+bank_kyc -> [1, 0, 0, 0, 0, 0]  # bank_kyc, family_emergency, job, other, prize, refund
+otp      -> [0, 0, 0, 1, 0, 0]  # link, money, nothing, otp, pin, qr_scan
+yes      -> [0, 1]              # no, yes
+unknown  -> [0, 0, 1]           # 1-3 times, 4+ times, unknown
+```
+
+Join the groups, in that order, to get one vector of 21 numbers. There are five 1s in this example, one per field. The 21 is the number of category slots, not the number of original fields, rows or neural layers. For another example, `whatsapp` is `[0, 0, 0, 1]` in this encoder's order.
+
+The encoder learns its categories from **training data only**, then applies the same order to the test data. We did not choose 21 as a neural-network setting. A different training dataset could produce a different category count. `handle_unknown="ignore"` makes an unseen category all-zero within its field; it avoids an error but does not mean the model understands that category.
+
+To inspect it after training in the notebook (or load the saved encoder first):
+
+```python
+import joblib
+
+enc = joblib.load("models_v2/encoder.joblib")
+features = joblib.load("models_v2/features.joblib")
+for field, categories in zip(features, enc.categories_):
+    print(field, len(categories), categories.tolist())
+print("Total inputs:", sum(len(c) for c in enc.categories_))  # 21
+print(enc.get_feature_names_out())  # exact column order
+```
 
 ### Logistic Regression (LR)
 
@@ -79,6 +127,69 @@ LR learns a weighted combination of the encoded inputs and converts that score t
 ### Multi-layer perceptron (MLP)
 
 The MLP is a small neural network with hidden layers of 32 and 16 units, ReLU activation, `max_iter=300` and `random_state=42`. It can learn nonlinear combinations of the inputs. With `early_stopping=True`, it sets aside 10% of the training data for validation and stops when validation performance no longer improves enough. It stopped after 29 epochs in the saved run. Early stopping helps limit overfitting; it cannot eliminate it.
+
+### What do "Dense 32", "Dense 16" and "ReLU" mean?
+
+**Dense means fully connected.** Every neuron receives all values from the previous layer. Each neuron has its own weights, multiplies the incoming values by those weights, adds the results and adds a bias. One neuron produces one calculated number.
+
+- **Dense 32:** 32 neurons each use all 21 input numbers. They calculate 32 new numbers.
+- **ReLU:** replace negative calculated numbers with zero; keep positive numbers unchanged. Zero stays zero. It does not add neurons or change the number of values.
+- **Dense 16:** 16 new neurons each use all 32 values from the previous layer. They calculate 16 new numbers, rather than selecting 16 of the old ones.
+- **ReLU again:** zero the negatives among those 16 numbers.
+- **One output neuron:** use all 16 values to calculate one score. **Sigmoid**, not ReLU, maps that score between 0 and 1.
+
+An illustrative ReLU example (not actual hidden values from the saved model):
+
+```text
+Before ReLU: [-2, 3, -0.5, 7]
+After ReLU:  [ 0, 3,  0,   7]
+```
+
+Four numbers went in and four came out. In our network, the first ReLU keeps 32 values and the second keeps 16.
+
+**32 and 16 are neuron counts we chose, not numbers of layers.** `hidden_layer_sizes=(32, 16)` means two hidden layers: first 32 neurons, then 16. Training learns weights and biases; it does not choose these neuron counts. Together with the final output layer, there are three learned dense layers. The input vector and ReLU operations are not extra groups of neurons.
+
+### Where is ReLU in the notebook code?
+
+There is no separate ReLU import because `MLPClassifier` applies it internally. Our code selects it here:
+
+```python
+mlp = MLPClassifier(
+    hidden_layer_sizes=(32, 16),  # 32 neurons, then 16 neurons
+    activation="relu",           # applied inside both hidden layers
+    max_iter=300,
+    early_stopping=True,
+    validation_fraction=0.1,
+    random_state=42,
+).fit(Xtr, y_train)
+
+print(mlp.activation)       # relu: hidden-layer activation
+print(mlp.out_activation_)  # logistic: sigmoid for this binary output
+```
+
+`activation="relu"` chooses the hidden activation, not the output activation. Scikit-learn uses the logistic (sigmoid) output for this binary classifier. If writing ReLU by hand, `np.maximum(0, z)` does the same zeroing operation; it needs NumPy, not a separate ReLU import.
+
+Read the whole path in plain language:
+
+```text
+5 text fields
+  -> one-hot encoder: 21 input numbers (4 + 6 + 6 + 2 + 3)
+  -> 32 neurons calculate 32 numbers, then ReLU zeros negatives
+  -> 16 neurons calculate 16 numbers, then ReLU zeros negatives
+  -> 1 neuron calculates 1 score, then sigmoid gives probability p
+  -> predict 1 if p >= 0.5, otherwise 0
+```
+
+For the exact example row above, the saved v2.0 MLP gives `p = 0.50786631` (about `0.508`), so the 0.5 threshold produces class 1. It is close to the threshold, not a confident warning. The label is risky engagement, and this probability is not a verified chance of losing money.
+
+The saved weight matrices have shapes `(21, 32)`, `(32, 16)` and `(16, 1)`. Including one bias per neuron, their trainable parameter counts are:
+
+```text
+First hidden layer:  21 * 32 + 32 = 704
+Second hidden layer: 32 * 16 + 16 = 528
+Output layer:        16 *  1 +  1 =  17
+Total:               704 + 528 + 17 = 1,249
+```
 
 ### Architecture and why we chose it
 
@@ -141,7 +252,9 @@ V2 MLP F1 and both ROC-AUCs are lower, while v2 LR F1 is higher. It would be wro
 
 ## 6. Run the project on a laptop
 
-The verified run used Python 3.10.12 and scikit-learn 1.7.2. Internet is needed to clone the repo and install packages initially. After that, v2 training uses the included CSV and does not fetch a dataset. No GPU is needed by this notebook.
+The verified run used Python 3.10.12 and scikit-learn 1.7.2. To train without Jupyter, run `python train.py` from the repo root after installing the requirements. Add `--plots` to save graphs. It rewrites local `models_v2/*.joblib` and `results/metrics_v2.json`; see the README for the Windows setup commands.
+
+Internet is needed to clone the repo and install packages initially. After that, v2 training uses the included CSV and does not fetch a dataset. No GPU is needed by this notebook.
 
 ### Ubuntu / Linux / macOS terminal
 
