@@ -21,21 +21,54 @@ are still happening.
                           transactions (PaySim)
 ```
 
-## Step 0: the data
+## Step 0: the data, in detail
 
-There are no public logs of real mobile-money traffic (it's private financial
-data), so the standard research stand-in is **PaySim**: a simulator built from
-real aggregated logs of an African mobile-money service. It produced
-**6,362,620 transactions over one simulated month**, of which only **8,213 are
-fraud - 0.13%**.
+**What we used:** the **PaySim** dataset - "Synthetic Financial Datasets For
+Fraud Detection", the standard public dataset for mobile-money fraud work.
+Real transaction logs are private financial data that no company can publish,
+so researchers built PaySim: a simulator calibrated on aggregated stats from
+real logs of a mobile-money service running in 14+ countries. It behaves like
+the real thing, including injected criminals.
+
+- Source: <https://www.kaggle.com/datasets/ealaxi/paysim1> (the notebook
+  downloads the identical CSV from a public Hugging Face mirror,
+  <https://huggingface.co/datasets/theman10/paysim>, because Kaggle needs a
+  login)
+- Paper: Lopez-Rojas, Elmir, Axelsson, "PaySim: A financial mobile money
+  simulator for fraud detection", EMSS 2016.
+
+**How big it is:**
+
+| fact | value |
+|---|---|
+| file size | ~470 MB CSV |
+| total transactions | **6,362,620** |
+| time span | 744 hourly steps = one simulated month |
+| fraud transactions | **8,213 (0.13%)** |
+| legit transactions | 6,354,407 (99.87%) |
+
+**What's in each row:** `step` (which hour), `type` (one of 5 kinds), `amount`,
+`nameOrig`/`nameDest` (sender/receiver IDs), `oldbalanceOrg`/`newbalanceOrig`
+(sender balance before/after), `oldbalanceDest`/`newbalanceDest` (receiver
+before/after), `isFraud` (the answer), `isFlaggedFraud` (the bank's old rule).
+
+**The 5 transaction types, counted from the actual file:**
+
+| type | rows | fraud rows |
+|---|---:|---:|
+| CASH_OUT | 2,237,500 | **4,116** |
+| PAYMENT | 2,151,495 | 0 |
+| CASH_IN | 1,399,284 | 0 |
+| TRANSFER | 532,909 | **4,097** |
+| DEBIT | 41,432 | 0 |
+
+Fraud happens **only** in TRANSFER and CASH_OUT - the criminal moves money out
+of the victim's account, then withdraws it. That's why we train only on those
+two types.
 
 That imbalance is the whole game. A "model" that says *legit* every single time
 is already 99.87% accurate - and completely useless. So we never trust plain
 accuracy; we watch **precision** and **recall** (defined below).
-
-Dataset source: <https://www.kaggle.com/datasets/ealaxi/paysim1>
-(Paper: Lopez-Rojas, Elmir, Axelsson, "PaySim: A financial mobile money
-simulator for fraud detection", EMSS 2016.)
 
 ## Step 1: keep the slice where fraud lives
 
@@ -44,9 +77,15 @@ In PaySim, fraud **only** ever appears as TRANSFER or CASH_OUT - the criminal
 moves money out of the victim's account (TRANSFER) and then withdraws it
 (CASH_OUT). So we train only on those two types.
 
-Even then it's 2.77M rows. To keep training quick we keep **100% of the fraud
-rows** and a random **5% of the legit rows** - 145,861 rows total. The notebook
-prints these counts when it runs, so the subset is stated, not hidden.
+**The exact training subset:** TRANSFER + CASH_OUT together are 2,770,409
+rows. Training on all of them would be slow for no real gain (they're 99.7%
+legit), so we keep **100% of the 8,213 fraud rows** and a random **5% of the
+legit rows** - **145,861 rows total** (8,213 fraud + 137,648 legit). The 5%
+sampling uses a fixed random seed, so rerunning gives the identical subset. The
+notebook prints these counts when it runs, so the subset is stated, not hidden.
+Why this is fair: every fraud case is in there, and the legit sample is random,
+so the models still see the real variety of honest transactions - just without
+making you wait all day.
 
 ## Step 2: features - what the model is allowed to see
 
