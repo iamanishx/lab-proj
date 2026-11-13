@@ -6,11 +6,26 @@ Predict a risky-engagement proxy from five categorical fields in 3,005 collected
 
 - **`explanation.md`**: start here for the dataset, architecture, results, laptop setup and limitations.
 - **`fraud_detection_v2.ipynb`**: executed training/evaluation notebook; reads the included `data/scam_encounters_india.csv`.
+- **`train.py`**: the same v2 training pipeline as a plain script, for running locally without the notebook.
 - **`data/DATASET_NOTES.md`**: provenance and coding conventions. Any approximate noise percentages in these notes are not measured audit results.
 - **`results/metrics_v2.json`**: LR F1 **0.7632**, ROC-AUC **0.8372**; MLP F1 **0.7782**, ROC-AUC **0.8482**, on 601 held-out rows.
 - **v2.0 model files**: <https://github.com/iamanishx/lab-proj/releases/tag/v2.0> (`lr_model.joblib`, `mlp_model.joblib`, `encoder.joblib`, `features.joblib`).
 
 The notebook uses an 80/20 stratified row split, not a source-grouped split. Related reports may cross train/test. These scores are not a validated estimate of real-world fraud-filter performance.
+
+
+### Run locally as a script (no notebook)
+
+From the repo folder (Windows `cmd` shown):
+
+```
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python train.py
+```
+
+This retrains both models on the included CSV, prints the same metrics, and rewrites `models_v2/` and `results/metrics_v2.json`. Add `--plots` to also save ROC/EDA PNGs under `results/`, or pass `--csv path/to/other.csv` for a file with the same columns.
 
 ## Earlier reference: PaySim (v1)
 
